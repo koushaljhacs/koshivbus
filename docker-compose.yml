@@ -1,0 +1,131 @@
+# ================================================================================
+# DOCKER COMPOSE CONFIGURATION - KOSHIV BUS BOOKING SYSTEM
+# ================================================================================
+# Version: 1.0.4
+# Author: Koushal Jha
+# Date: May 2026
+# Project: KOSHIV BUS BOOKING SYSTEM
+# Description: PostgreSQL containers for Admin and Booking servers
+# Compliance: IT Act 2000, Indian Financial Regulations
+# ================================================================================
+# VERSION HISTORY:
+# ================================================================================
+# v1.0.0 (Initial Release):
+#   - Basic PostgreSQL 15 container for admin server only
+#   - Container name: koshiv-bus-postgres-admin
+#   - Port mapping: 15434:5432 (default 0.0.0.0 binding)
+#   - Environment: POSTGRES_USER=koushal, POSTGRES_DB=koshiv_bus_admin
+#   - Volume mounts for data and init scripts
+#   - Network: koshiv-bus-network (bridge driver)
+#
+# v1.0.1:
+#   - Added TZ: Asia/Kolkata for Indian timezone
+#   - Added healthcheck using pg_isready
+#   - Added resource limits (CPU: 1.0, Memory: 1GB)
+#   - Added logging configuration
+#
+# v1.0.2:
+#   - Removed obsolete 'version' attribute warning
+#   - Windows compatibility fixes
+#
+# v1.0.3:
+#   - Added specific host IP binding: 100.81.13.80
+#   - Port format: "100.81.13.80:15434:5432"
+#   - Required for pgAdmin4 connectivity from specified IP
+#
+# v1.0.4 (Current Version):
+#   - Added booking server (postgres-booking)
+#   - Container name: koshiv-bus-postgres-booking
+#   - Port mapping: 100.81.13.80:15432:5432
+#   - Environment: POSTGRES_USER=koushal, POSTGRES_DB=koshiv_bus_booking
+#   - Password: Koushal@Booking2026#Secure
+#   - Volume mounts: ./databases/booking/data and ./databases/booking/init
+#   - Same healthcheck, resource limits, logging as admin server
+# ================================================================================
+
+services:
+  # ============================================================================
+  # ADMIN SERVER (Server 3)
+  # ============================================================================
+  postgres-admin:
+    image: postgres:15
+    container_name: koshiv-bus-postgres-admin
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: koushal
+      POSTGRES_PASSWORD: Koushal@Admin2026#Secure
+      POSTGRES_DB: koshiv_bus_admin
+      TZ: Asia/Kolkata
+    ports:
+      - "100.81.13.80:15434:5432"
+    volumes:
+      - ./databases/admin/data:/var/lib/postgresql/data
+      - ./databases/admin/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koushal -d koshiv_bus_admin"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    networks:
+      - koshiv-bus-network
+
+  # ============================================================================
+  # BOOKING SERVER (Server 1)
+  # ============================================================================
+  postgres-booking:
+    image: postgres:15
+    container_name: koshiv-bus-postgres-booking
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: koushal
+      POSTGRES_PASSWORD: Koushal@Booking2026#Secure
+      POSTGRES_DB: koshiv_bus_booking
+      TZ: Asia/Kolkata
+    ports:
+      - "100.81.13.80:15432:5432"
+    volumes:
+      - ./databases/booking/data:/var/lib/postgresql/data
+      - ./databases/booking/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koushal -d koshiv_bus_booking"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    networks:
+      - koshiv-bus-network
+
+# ================================================================================
+# NETWORK DEFINITION
+# ================================================================================
+networks:
+  koshiv-bus-network:
+    driver: bridge
+    name: koshiv-bus-network
