@@ -1,7 +1,7 @@
 -- ================================================================================
 -- SERVER CREDENTIALS TABLE
 -- ================================================================================
--- Version: 1.0.3
+-- Version: 1.0.4
 -- Author: Koushal Jha
 -- Date: May 2026
 -- Project: KOSHIV BUS BOOKING SYSTEM
@@ -29,11 +29,16 @@
 --   - Added booking server credentials INSERT
 --   - Both admin server and booking server records inserted together
 --
--- v1.0.3 (Current Version):
+-- v1.0.3:
 --   - REMOVED DROP TABLE IF EXISTS (prevent accidental data loss)
 --   - Added CREATE TABLE IF NOT EXISTS (safe for production)
 --   - Added ON CONFLICT DO NOTHING for INSERT statements
 --   - Script is now idempotent - can be run multiple times safely
+--
+-- v1.0.4 (Current Version):
+--   - Added operations server credentials INSERT
+--   - All three servers (admin, booking, operations) credentials now inserted
+--   - Complete production ready script
 -- ================================================================================
 
 -- ================================================================================
@@ -99,7 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_server_credentials_server_name ON server_credenti
 CREATE INDEX IF NOT EXISTS idx_server_credentials_is_active ON server_credentials(is_active);
 
 -- ================================================================================
--- INSERT INITIAL DATA (WITH ON CONFLICT - SAFE FOR RE-RUN)
+-- INSERT INITIAL DATA (ALL THREE SERVERS - WITH ON CONFLICT)
 -- ================================================================================
 -- Note: Password will be encrypted by application before insert.
 -- The value shown is plain text for reference. Application must encrypt.
@@ -148,6 +153,27 @@ INSERT INTO server_credentials (
     TRUE
 ) ON CONFLICT (server_name) DO NOTHING;
 
+-- Record 3: Operations Server
+INSERT INTO server_credentials (
+    credential_id,
+    server_name,
+    host,
+    port,
+    database_name,
+    username,
+    password,
+    is_active
+) VALUES (
+    gen_random_uuid(),
+    'koshiv_bus_operations_server',
+    '100.81.13.80',
+    15433,
+    'koshiv_bus_operations',
+    'koushal',
+    'Koushal@Operations2026#Secure',
+    TRUE
+) ON CONFLICT (server_name) DO NOTHING;
+
 -- ================================================================================
 -- CREATE FUNCTION FOR AUTO-UPDATE TIMESTAMP
 -- ================================================================================
@@ -161,7 +187,7 @@ END;
 $$ language 'plpgsql';
 
 -- ================================================================================
--- CREATE TRIGGER FOR UPDATED_AT (DROP IF EXISTS first)
+-- CREATE TRIGGER FOR UPDATED_AT (DROP IF EXISTS FIRST)
 -- ================================================================================
 
 DROP TRIGGER IF EXISTS update_server_credentials_updated_at ON server_credentials;
@@ -180,8 +206,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON server_credentials TO koushal;
 -- ================================================================================
 -- VERIFICATION QUERY
 -- ================================================================================
--- SELECT server_name, host, port, database_name, username FROM server_credentials;
+-- SELECT server_name, host, port, database_name, username FROM server_credentials ORDER BY server_name;
 -- Expected output:
--- koshiv_bus_admin_server | 100.81.13.80 | 15434 | koshiv_bus_admin | koushal
--- koshiv_bus_booking_server | 100.81.13.80 | 15432 | koshiv_bus_booking | koushal
+-- koshiv_bus_admin_server      | 100.81.13.80 | 15434 | koshiv_bus_admin      | koushal
+-- koshiv_bus_booking_server    | 100.81.13.80 | 15432 | koshiv_bus_booking    | koushal
+-- koshiv_bus_operations_server | 100.81.13.80 | 15433 | koshiv_bus_operations | koushal
 -- ================================================================================
