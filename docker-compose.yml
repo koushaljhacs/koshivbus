@@ -1,11 +1,11 @@
 # ================================================================================
 # DOCKER COMPOSE CONFIGURATION - KOSHIV BUS BOOKING SYSTEM
 # ================================================================================
-# Version: 1.0.4
+# Version: 1.0.5
 # Author: Koushal Jha
 # Date: May 2026
 # Project: KOSHIV BUS BOOKING SYSTEM
-# Description: PostgreSQL containers for Admin and Booking servers
+# Description: PostgreSQL containers for Admin, Booking, and Operations servers
 # Compliance: IT Act 2000, Indian Financial Regulations
 # ================================================================================
 # VERSION HISTORY:
@@ -33,7 +33,7 @@
 #   - Port format: "100.81.13.80:15434:5432"
 #   - Required for pgAdmin4 connectivity from specified IP
 #
-# v1.0.4 (Current Version):
+# v1.0.4:
 #   - Added booking server (postgres-booking)
 #   - Container name: koshiv-bus-postgres-booking
 #   - Port mapping: 100.81.13.80:15432:5432
@@ -41,11 +41,21 @@
 #   - Password: Koushal@Booking2026#Secure
 #   - Volume mounts: ./databases/booking/data and ./databases/booking/init
 #   - Same healthcheck, resource limits, logging as admin server
+#
+# v1.0.5 (Current Version):
+#   - Added operations server (postgres-operations)
+#   - Container name: koshiv-bus-postgres-operations
+#   - Port mapping: 100.81.13.80:15433:5432
+#   - Environment: POSTGRES_USER=koushal, POSTGRES_DB=koshiv_bus_operations
+#   - Password: Koushal@Operations2026#Secure
+#   - Volume mounts: ./databases/operations/data and ./databases/operations/init
+#   - Same healthcheck, resource limits, logging as other servers
+#   - All three servers (admin, booking, operations) now complete
 # ================================================================================
 
 services:
   # ============================================================================
-  # ADMIN SERVER (Server 3)
+  # ADMIN SERVER (Port: 15434)
   # ============================================================================
   postgres-admin:
     image: postgres:15
@@ -84,7 +94,7 @@ services:
       - koshiv-bus-network
 
   # ============================================================================
-  # BOOKING SERVER (Server 1)
+  # BOOKING SERVER (Port: 15432)
   # ============================================================================
   postgres-booking:
     image: postgres:15
@@ -102,6 +112,45 @@ services:
       - ./databases/booking/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U koushal -d koshiv_bus_booking"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    networks:
+      - koshiv-bus-network
+
+  # ============================================================================
+  # OPERATIONS SERVER (Port: 15433)
+  # ============================================================================
+  postgres-operations:
+    image: postgres:15
+    container_name: koshiv-bus-postgres-operations
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: koushal
+      POSTGRES_PASSWORD: Koushal@Operations2026#Secure
+      POSTGRES_DB: koshiv_bus_operations
+      TZ: Asia/Kolkata
+    ports:
+      - "100.81.13.80:15433:5432"
+    volumes:
+      - ./databases/operations/data:/var/lib/postgresql/data
+      - ./databases/operations/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koushal -d koshiv_bus_operations"]
       interval: 30s
       timeout: 10s
       retries: 5
