@@ -1,7 +1,7 @@
 -- ================================================================================
 -- SERVER CREDENTIALS TABLE
 -- ================================================================================
--- Version: 1.0.2
+-- Version: 1.0.3
 -- Author: Koushal Jha
 -- Date: May 2026
 -- Project: KOSHIV BUS BOOKING SYSTEM
@@ -25,9 +25,15 @@
 --   - Added table and column comments for documentation
 --   - Added note about password encryption at application layer (AES-256)
 --
--- v1.0.2 (Current Version):
+-- v1.0.2:
 --   - Added booking server credentials INSERT
 --   - Both admin server and booking server records inserted together
+--
+-- v1.0.3 (Current Version):
+--   - REMOVED DROP TABLE IF EXISTS (prevent accidental data loss)
+--   - Added CREATE TABLE IF NOT EXISTS (safe for production)
+--   - Added ON CONFLICT DO NOTHING for INSERT statements
+--   - Script is now idempotent - can be run multiple times safely
 -- ================================================================================
 
 -- ================================================================================
@@ -38,22 +44,16 @@ REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO koushal;
 
 -- ================================================================================
--- DROP TABLE IF EXISTS (for clean re-run)
--- ================================================================================
-
-DROP TABLE IF EXISTS server_credentials CASCADE;
-
--- ================================================================================
 -- CREATE EXTENSION FOR UUID (if not already enabled)
 -- ================================================================================
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ================================================================================
--- CREATE SERVER CREDENTIALS TABLE
+-- CREATE SERVER CREDENTIALS TABLE (IF NOT EXISTS)
 -- ================================================================================
 
-CREATE TABLE server_credentials (
+CREATE TABLE IF NOT EXISTS server_credentials (
     credential_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     server_name           VARCHAR(50) NOT NULL UNIQUE,
     host                  INET NOT NULL,
@@ -92,17 +92,18 @@ COMMENT ON COLUMN server_credentials.created_at IS 'Record creation timestamp';
 COMMENT ON COLUMN server_credentials.updated_at IS 'Record last update timestamp';
 
 -- ================================================================================
--- CREATE INDEXES
+-- CREATE INDEXES (IF NOT EXISTS)
 -- ================================================================================
 
-CREATE INDEX idx_server_credentials_server_name ON server_credentials(server_name);
-CREATE INDEX idx_server_credentials_is_active ON server_credentials(is_active);
+CREATE INDEX IF NOT EXISTS idx_server_credentials_server_name ON server_credentials(server_name);
+CREATE INDEX IF NOT EXISTS idx_server_credentials_is_active ON server_credentials(is_active);
 
 -- ================================================================================
--- INSERT INITIAL DATA (ADMIN SERVER + BOOKING SERVER)
+-- INSERT INITIAL DATA (WITH ON CONFLICT - SAFE FOR RE-RUN)
 -- ================================================================================
 -- Note: Password will be encrypted by application before insert.
 -- The value shown is plain text for reference. Application must encrypt.
+-- ON CONFLICT ensures no duplicate errors if script runs multiple times
 -- ================================================================================
 
 -- Record 1: Admin Server
@@ -124,7 +125,7 @@ INSERT INTO server_credentials (
     'koushal',
     'Koushal@Admin2026#Secure',
     TRUE
-);
+) ON CONFLICT (server_name) DO NOTHING;
 
 -- Record 2: Booking Server
 INSERT INTO server_credentials (
@@ -145,7 +146,7 @@ INSERT INTO server_credentials (
     'koushal',
     'Koushal@Booking2026#Secure',
     TRUE
-);
+) ON CONFLICT (server_name) DO NOTHING;
 
 -- ================================================================================
 -- CREATE FUNCTION FOR AUTO-UPDATE TIMESTAMP
@@ -160,8 +161,10 @@ END;
 $$ language 'plpgsql';
 
 -- ================================================================================
--- CREATE TRIGGER FOR UPDATED_AT
+-- CREATE TRIGGER FOR UPDATED_AT (DROP IF EXISTS first)
 -- ================================================================================
+
+DROP TRIGGER IF EXISTS update_server_credentials_updated_at ON server_credentials;
 
 CREATE TRIGGER update_server_credentials_updated_at
     BEFORE UPDATE ON server_credentials
