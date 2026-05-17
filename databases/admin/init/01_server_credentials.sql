@@ -1,7 +1,7 @@
 -- ================================================================================
 -- SERVER CREDENTIALS TABLE
 -- ================================================================================
--- Version: 1.0.1
+-- Version: 1.0.2
 -- Author: Koushal Jha
 -- Date: May 2026
 -- Project: KOSHIV BUS BOOKING SYSTEM
@@ -18,12 +18,16 @@
 --   - Auto-update timestamp function and trigger
 --   - Initial data for admin server only
 --
--- v1.0.1 (Current Version):
+-- v1.0.1:
 --   - Changed credential_id from SERIAL to UUID
 --   - Added pgcrypto extension for UUID generation
 --   - Added REVOKE PUBLIC and GRANT statements for security
 --   - Added table and column comments for documentation
 --   - Added note about password encryption at application layer (AES-256)
+--
+-- v1.0.2 (Current Version):
+--   - Added booking server credentials INSERT
+--   - Both admin server and booking server records inserted together
 -- ================================================================================
 
 -- ================================================================================
@@ -95,12 +99,13 @@ CREATE INDEX idx_server_credentials_server_name ON server_credentials(server_nam
 CREATE INDEX idx_server_credentials_is_active ON server_credentials(is_active);
 
 -- ================================================================================
--- INSERT INITIAL DATA (ADMIN SERVER ONLY)
+-- INSERT INITIAL DATA (ADMIN SERVER + BOOKING SERVER)
 -- ================================================================================
 -- Note: Password will be encrypted by application before insert.
 -- The value shown is plain text for reference. Application must encrypt.
 -- ================================================================================
 
+-- Record 1: Admin Server
 INSERT INTO server_credentials (
     credential_id,
     server_name,
@@ -118,6 +123,27 @@ INSERT INTO server_credentials (
     'koshiv_bus_admin',
     'koushal',
     'Koushal@Admin2026#Secure',
+    TRUE
+);
+
+-- Record 2: Booking Server
+INSERT INTO server_credentials (
+    credential_id,
+    server_name,
+    host,
+    port,
+    database_name,
+    username,
+    password,
+    is_active
+) VALUES (
+    gen_random_uuid(),
+    'koshiv_bus_booking_server',
+    '100.81.13.80',
+    15432,
+    'koshiv_bus_booking',
+    'koushal',
+    'Koushal@Booking2026#Secure',
     TRUE
 );
 
@@ -147,3 +173,12 @@ CREATE TRIGGER update_server_credentials_updated_at
 -- ================================================================================
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON server_credentials TO koushal;
+
+-- ================================================================================
+-- VERIFICATION QUERY
+-- ================================================================================
+-- SELECT server_name, host, port, database_name, username FROM server_credentials;
+-- Expected output:
+-- koshiv_bus_admin_server | 100.81.13.80 | 15434 | koshiv_bus_admin | koushal
+-- koshiv_bus_booking_server | 100.81.13.80 | 15432 | koshiv_bus_booking | koushal
+-- ================================================================================
