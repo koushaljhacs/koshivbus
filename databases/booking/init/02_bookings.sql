@@ -1,5 +1,5 @@
 -- ================================================================================
--- BOOKINGS TABLE – v1.5
+-- BOOKINGS TABLE – v1.5.1 (FINAL PRODUCTION READY)
 -- Database: koshiv_bus_booking
 -- Author: Koushal Jha
 -- Date: May 2026
@@ -13,10 +13,11 @@
 -- v1.3 – Final as per original discussion
 -- v1.4 – Added cancellation_policy_snapshot, payment_deadline, departure_time, arrival_time, booking_ip, booking_user_agent
 -- v1.5 – Added charting_status, is_operator_cancelled, bus_delayed_minutes
+-- v1.5.1 – Fixed PNR format, added payment_deadline constraint, extra_data default, user_status index, removed FK (users in different DB)
 -- ================================================================================
 
 -- ================================================================================
--- CREATE SEQUENCE FOR PNR (10-digit, starts at 1000000000)
+-- CREATE SEQUENCE FOR PNR (10-digit, starts at 1000000000, no leading zeros)
 -- ================================================================================
 
 CREATE SEQUENCE IF NOT EXISTS seq_pnr START 1000000000 INCREMENT 1;
@@ -102,7 +103,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     booking_ip INET,
     booking_user_agent TEXT,
     booking_source TEXT NOT NULL DEFAULT 'web',
-    extra_data JSONB,
+    extra_data JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
@@ -121,7 +122,8 @@ CREATE TABLE IF NOT EXISTS bookings (
     CONSTRAINT pnr_format_check CHECK (pnr ~ '^[0-9]{10}$'),
     CONSTRAINT passenger_gender_check CHECK (passenger_gender IN ('M', 'F', 'O')),
     CONSTRAINT charting_status_check CHECK (charting_status IN ('pending', 'generated', 'printed')),
-    CONSTRAINT bus_delayed_minutes_check CHECK (bus_delayed_minutes >= 0)
+    CONSTRAINT bus_delayed_minutes_check CHECK (bus_delayed_minutes >= 0),
+    CONSTRAINT payment_deadline_check CHECK (payment_deadline IS NULL OR payment_deadline > booking_time)
 );
 
 -- ================================================================================
@@ -130,34 +132,35 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 COMMENT ON TABLE bookings IS 'Stores all bus booking transactions for KOSHIV system';
 COMMENT ON COLUMN bookings.booking_id IS 'Unique identifier (UUID)';
-COMMENT ON COLUMN bookings.user_id IS 'References users.user_id (local table). ON DELETE RESTRICT';
-COMMENT ON COLUMN bookings.bus_id IS 'Reference to koshiv_bus_operations.buses.bus_id (no FK, app enforced)';
-COMMENT ON COLUMN bookings.seat_id IS 'Reference to koshiv_bus_operations.seats.seat_id (allocated after payment)';
-COMMENT ON COLUMN bookings.pnr IS '10-digit numeric only (e.g., 1000000000)';
+COMMENT ON COLUMN bookings.user_id IS 'References users.user_id from koshiv_bus_user database - FK enforced at application level';
+COMMENT ON COLUMN bookings.bus_id IS 'Reference to koshiv_bus_operations.buses.bus_id - FK enforced at application level';
+COMMENT ON COLUMN bookings.seat_id IS 'Reference to koshiv_bus_operations.seats.seat_id - allocated after payment';
+COMMENT ON COLUMN bookings.pnr IS '10-digit numeric only, sequential from 1000000000, no leading zeros';
 COMMENT ON COLUMN bookings.from_highway_station IS 'e.g., Darbhanga Highway Station';
 COMMENT ON COLUMN bookings.to_highway_station IS 'e.g., New Delhi Highway Station';
 COMMENT ON COLUMN bookings.journey_date IS 'Must be >= CURRENT_DATE';
-COMMENT ON COLUMN bookings.departure_time IS 'Snapshot of scheduled departure time (v1.4)';
-COMMENT ON COLUMN bookings.arrival_time IS 'Snapshot of scheduled arrival time (v1.4)';
+COMMENT ON COLUMN bookings.departure_time IS 'Snapshot of scheduled departure time';
+COMMENT ON COLUMN bookings.arrival_time IS 'Snapshot of scheduled arrival time';
 COMMENT ON COLUMN bookings.pickup_city IS 'City where cab picks up passenger';
 COMMENT ON COLUMN bookings.drop_city IS 'City where cab drops passenger';
-COMMENT ON COLUMN bookings.passenger_name IS 'Encrypted PII (AES-256 at application layer)';
-COMMENT ON COLUMN bookings.passenger_age IS 'Encrypted PII, 0-120';
-COMMENT ON COLUMN bookings.passenger_gender IS 'Encrypted PII: M, F, O';
-COMMENT ON COLUMN bookings.passenger_mobile IS 'Encrypted PII, 10 digits';
+COMMENT ON COLUMN bookings.passenger_name IS 'Encrypted PII - AES-256 at application layer';
+COMMENT ON COLUMN bookings.passenger_age IS 'Encrypted PII - range 0-120';
+COMMENT ON COLUMN bookings.passenger_gender IS 'Encrypted PII - M, F, O';
+COMMENT ON COLUMN bookings.passenger_mobile IS 'Encrypted PII - 10 digits';
 COMMENT ON COLUMN bookings.seat_preference IS 'window, aisle, middle, lower, upper, none';
 COMMENT ON COLUMN bookings.special_category IS 'medical, serviceman, none';
 COMMENT ON COLUMN bookings.quota_type IS 'general, ladies, tatkal, lower_berth, disabled, duty_pass';
 COMMENT ON COLUMN bookings.ticket_type IS 'Adult, Child, Senior, Student';
 COMMENT ON COLUMN bookings.base_fare IS 'Includes bus fare + cab fare + all inclusive';
 COMMENT ON COLUMN bookings.payment_id IS 'Gateway transaction ID';
-COMMENT ON COLUMN bookings.payment_deadline IS 'Expiry for pending booking (v1.4)';
-COMMENT ON COLUMN bookings.cancellation_policy_snapshot IS 'Stored rules for refund calculation (v1.4)';
-COMMENT ON COLUMN bookings.charting_status IS 'pending, generated, printed (v1.5)';
-COMMENT ON COLUMN bookings.is_operator_cancelled IS 'True if bus operator cancels trip (v1.5)';
-COMMENT ON COLUMN bookings.bus_delayed_minutes IS 'Minutes of delay at departure (v1.5)';
-COMMENT ON COLUMN bookings.booking_ip IS 'IP address of booking request (v1.4)';
-COMMENT ON COLUMN bookings.booking_user_agent IS 'Browser/device info for legal audit (v1.4)';
+COMMENT ON COLUMN bookings.payment_deadline IS 'Expiry for pending booking - must be > booking_time';
+COMMENT ON COLUMN bookings.cancellation_policy_snapshot IS 'Stored rules for refund calculation at booking time';
+COMMENT ON COLUMN bookings.charting_status IS 'pending, generated, printed - auto-cancel waitlisted after charting';
+COMMENT ON COLUMN bookings.is_operator_cancelled IS 'True = bus operator cancels trip - gives full refund';
+COMMENT ON COLUMN bookings.bus_delayed_minutes IS 'Delay in minutes - >=180 gives full refund if not travelled';
+COMMENT ON COLUMN bookings.booking_ip IS 'IP address of booking request for legal audit';
+COMMENT ON COLUMN bookings.booking_user_agent IS 'Browser/device info for legal audit';
+COMMENT ON COLUMN bookings.extra_data IS 'Additional JSON data for future extensions';
 
 -- ================================================================================
 -- CREATE INDEXES
@@ -166,6 +169,7 @@ COMMENT ON COLUMN bookings.booking_user_agent IS 'Browser/device info for legal 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bookings_pnr ON bookings(pnr);
 CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_user_date ON bookings(user_id, journey_date);
+CREATE INDEX IF NOT EXISTS idx_bookings_user_status ON bookings(user_id, booking_status);
 CREATE INDEX IF NOT EXISTS idx_bookings_journey_date ON bookings(journey_date);
 CREATE INDEX IF NOT EXISTS idx_bookings_bus_id ON bookings(bus_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(booking_status);
@@ -179,7 +183,6 @@ CREATE INDEX IF NOT EXISTS idx_bookings_operator_cancelled ON bookings(is_operat
 -- TRIGGER FUNCTIONS
 -- ================================================================================
 
--- Trigger: Set booking_time if null
 CREATE OR REPLACE FUNCTION trigger_set_booking_time()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -190,18 +193,16 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Trigger: Generate 10-digit sequential PNR
 CREATE OR REPLACE FUNCTION trigger_generate_pnr()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.pnr IS NULL THEN
-        NEW.pnr = LPAD(NEXTVAL('seq_pnr')::TEXT, 10, '0');
+        NEW.pnr = NEXTVAL('seq_pnr')::TEXT;
     END IF;
     RETURN NEW;
 END;
 $$ language 'plpgsql';
 
--- Trigger: Set payment_deadline for pending bookings (v1.4)
 CREATE OR REPLACE FUNCTION trigger_set_payment_deadline()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -212,7 +213,6 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Trigger: Update updated_at timestamp
 CREATE OR REPLACE FUNCTION trigger_update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -248,8 +248,3 @@ CREATE TRIGGER trg_update_updated_at
     BEFORE UPDATE ON bookings
     FOR EACH ROW
     EXECUTE FUNCTION trigger_update_updated_at();
-
--- ================================================================================
--- VERIFICATION QUERY
--- ================================================================================
--- SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'bookings' ORDER BY ordinal_position;
