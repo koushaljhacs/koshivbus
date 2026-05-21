@@ -8,17 +8,29 @@
  *              - Sets up error handling
  *              
  *              RULE 1.1: NO DUMMY DATA - All code production ready
+ *              RULE 1.2: NO DEFAULT PORTS - Uses port 13000 from .env
  *              RULE 1.3: NO LOCALHOST - Uses 100.81.13.80 from .env
- *              RULE 6: All security headers applied via helmet + custom middleware
+ *              RULE 1.8: RATE LIMITING - Applied to all endpoints
  *              RULE 1.9: REQUEST VALIDATION - Joi schemas for all inputs
+ *              RULE 6: SECURITY HEADERS - All headers applied
  * 
- * @version     1.0.0.0.0
+ * @version     1.0.0.0.1
  * @author      Koushal Jha
  * @email       koushaljha.cs@gmail.com
  * @date        May 2026
  * @project     KOSHIV BUS BOOKING SYSTEM - Authentication Module Only
  * 
- * NOTE: No hardcoding - all config from environment variables
+ * @changelog
+ *              v1.0.0.0.1 (2026-05-22)
+ *              - Removed all hardcoded values, now using environment variables
+ *              - Added validation for required environment variables
+ *              - Separated captcha and auth routes
+ *              - Added proper error handling for missing config
+ *              
+ *              v1.0.0.0.0 (2026-05-22)
+ *              - Initial file creation
+ * 
+ * NOTE: No hardcoding - all configuration from environment variables
  *       No booking, no admin, no payment APIs in this phase
  *       Only authentication APIs (13 endpoints as listed in requirements)
  * ============================================================================
@@ -30,8 +42,37 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 
-// Load environment variables from .env file (RULE 1.3: Uses 100.81.13.80 from env)
+// Load environment variables from .env file
+// RULE 1.3: Uses 100.81.13.80 from env, not localhost
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+/**
+ * ============================================================================
+ * VALIDATE REQUIRED ENVIRONMENT VARIABLES
+ * ============================================================================
+ * Check if all required env variables are present before starting
+ * Prevents runtime errors due to missing configuration
+ * ============================================================================
+ */
+const requiredEnvVars = [
+  'PORT',
+  'NODE_ENV',
+  'DB_USER_HOST',
+  'DB_USER_PORT',
+  'DB_USER_NAME',
+  'REDIS_HOST',
+  'REDIS_PORT',
+  'JWT_ACCESS_SECRET',
+  'ENCRYPTION_KEY'
+];
+
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('❌ Please check your .env file');
+  process.exit(1);
+}
 
 // Import custom middleware
 const securityHeaders = require('./middleware/securityHeaders.middleware');
@@ -59,7 +100,12 @@ const app = express();
  * ============================================================================
  */
 
-// Helmet for security headers (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, HSTS, CSP)
+// Helmet for security headers
+// X-Content-Type-Options: nosniff
+// X-Frame-Options: DENY
+// X-XSS-Protection: 1; mode=block
+// Strict-Transport-Security: max-age=31536000; includeSubDomains
+// Content-Security-Policy: default-src 'none'
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -75,15 +121,20 @@ app.use(helmet({
   },
 }));
 
-// Custom security headers middleware (adds all headers from RULE 6)
+// Custom security headers middleware (adds Referrer-Policy and Cache-Control)
 app.use(securityHeaders);
 
 /**
  * CORS Configuration - Reads from environment variable
  * No hardcoded origins - ALLOWED_ORIGINS from .env
+ * If ALLOWED_ORIGINS not set, allows all (development only)
  */
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',') 
+  : (process.env.NODE_ENV === 'production' ? [] : '*');
+
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
+  origin: allowedOrigins,
   credentials: true,
   optionsSuccessStatus: 200,
 }));
@@ -142,17 +193,30 @@ app.get('/health', (req, res) => {
  * ============================================================================
  */
 
-// Security routes: GET /api/v1/security/captcha, POST /api/v1/security/captcha/validate
+// Security routes: 
+// GET  /api/v1/security/captcha
+// POST /api/v1/security/captcha/validate
 app.use('/api/v1/security', captchaRoutes);
 
-// Identity routes: register, login, logout, profile, token refresh, etc.
+// Identity routes:
+// POST   /api/v1/identity/register
+// POST   /api/v1/identity/otp/resend
+// POST   /api/v1/identity/otp/verify
+// POST   /api/v1/identity/login
+// POST   /api/v1/identity/password/forgot
+// POST   /api/v1/identity/password/reset
+// POST   /api/v1/identity/username/forgot
+// GET    /api/v1/identity/profile
+// PUT    /api/v1/identity/profile
+// POST   /api/v1/identity/logout
+// POST   /api/v1/identity/token/refresh
 app.use('/api/v1/identity', authRoutes);
 
 /**
  * ============================================================================
  * 404 HANDLER - Route not found
  * ============================================================================
- * Catches all unmatched routes and returns 404 error
+ * Catches all unmatched routes and returns 404 error with RFC 7807 format
  * ============================================================================
  */
 app.use('*', (req, res) => {
@@ -166,7 +230,15 @@ app.use('*', (req, res) => {
   });
 });
 
-// Global error handling middleware (must be last)
+/**
+ * ============================================================================
+ * GLOBAL ERROR HANDLING MIDDLEWARE
+ * ============================================================================
+ * Must be the last middleware
+ * Handles all errors thrown in the application
+ * Never exposes stack traces in production (RULE 1.7)
+ * ============================================================================
+ */
 app.use(errorHandler);
 
 module.exports = app;
